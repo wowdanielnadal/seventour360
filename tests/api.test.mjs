@@ -15,9 +15,16 @@ const cfg={email:'test@example.test',salt:salt.toString('hex'),hash:scryptSync(p
 let attempts=0;
 globalThis.__env={BUCKET:bucket,STUDIO_AUTH:JSON.stringify(cfg),DB:{prepare(){return {bind(){return {first:async()=>({attempts:++attempts}),run:async()=>({})}}}}}};
 const uri=source=>'data:text/javascript;base64,'+Buffer.from(ts.transpile(source,{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022})).toString('base64');
-const authUri=uri(fs.readFileSync('lib/studio-auth.ts','utf8').replace("import { env } from 'cloudflare:workers';",'const env=globalThis.__env;'));
-const load=path=>import(uri(fs.readFileSync(path,'utf8').replace("import {env} from 'cloudflare:workers';",'const env=globalThis.__env;').replace("'../../../lib/studio-auth'",JSON.stringify(authUri))));
+const authUri=uri(fs.readFileSync('lib/studio-auth.ts','utf8').replace("const env = process.env;",'const env=globalThis.__env;'));
+const load=path=>import(uri(fs.readFileSync(path,'utf8').replace(/const bucket=\(\): any => \{[^\n]+\};/, "const bucket=()=>globalThis.__env.BUCKET;").replace(/export async function (GET|POST|DELETE)\(r:Request\) \{[^\n]+\}/g, "").replace(/async function (get|post|remove)\(r:Request\)/g, (_, method) => `export async function ${method === "remove" ? "DELETE" : method.toUpperCase()}(r:Request)`).replace("'../../../lib/studio-auth'",JSON.stringify(authUri))));
 const auth=await load('app/api/auth/route.ts'),tours=await load('app/api/tours/route.ts'),images=await load('app/api/image/route.ts');
+// Verify the actual Vercel exports separately from the legacy mock suite.
+const actualAuth=await import(uri(fs.readFileSync('lib/studio-auth.ts','utf8')));
+assert.equal(await actualAuth.identity(new Request('https://studio.test',{headers:{'oai-authenticated-user-id':'spoofed','oai-authenticated-user-email':'spoofed@example.test'}})),null);
+for(const path of ['app/api/image/route.ts','app/api/tours/route.ts']) {
+ const actual=await import(uri(fs.readFileSync(path,'utf8').replace("'../../../lib/studio-auth'",JSON.stringify(authUri))));
+ for(const method of ['GET','POST','DELETE']) if(actual[method]) assert.equal((await actual[method](new Request('https://studio.test'))).status,503);
+}
 const base='https://studio.test';let cookie='';
 function req(path,{method='GET',body,logged=true,headers={}}={}){return new Request(base+path,{method,headers:{origin:base,...(logged&&cookie?{cookie}:{}),...(body&&!(body instanceof Uint8Array)?{'Content-Type':'application/json'}:{}),...headers},body:body===undefined?undefined:body instanceof Uint8Array?body:JSON.stringify(body)})}
 assert.equal((await auth.POST(req('/api/auth',{method:'POST',body:{email:cfg.email,password:'incorrect'}}))).status,401);

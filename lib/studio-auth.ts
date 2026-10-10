@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+const env = process.env;
 import { createHmac, createHash, timingSafeEqual, scryptSync, randomBytes } from 'node:crypto';
 
 export const COOKIE='__Host-seven_studio';
@@ -12,7 +12,8 @@ export function issueSession(){const c=config();const payload=Buffer.from(JSON.s
 export async function identity(r:Request):Promise<{id:string,email:string,source:string}|null>{
  const cookie=r.headers.get('cookie')?.split(';').map(v=>v.trim()).find(v=>v.startsWith(COOKIE+'='))?.slice(COOKIE.length+1);
  if(cookie){try{const c=config();const parts=cookie.split('.');if(parts.length===2&&parts[0].length<500){const expected=createHmac('sha256',c.sessionSecret).update(parts[0]).digest();const actual=Buffer.from(parts[1],'base64url');if(actual.length===expected.length&&timingSafeEqual(actual,expected)){const data=JSON.parse(Buffer.from(parts[0],'base64url').toString());if(Number.isFinite(data.exp)&&data.exp>Date.now())return {id:'studio-admin',email:c.email,source:'password'};}}}catch{}}
- const id=r.headers.get('oai-authenticated-user-id'),email=r.headers.get('oai-authenticated-user-email');return id&&email?{id,email,source:'chatgpt'}:null;
+ // Vercel does not authenticate ChatGPT Sites headers; never trust client-supplied identity.
+ return null;
 }
 export function verifyPassword(email:string,password:string){const c=config();const hash=scryptSync(password,Buffer.from(c.salt,'hex'),32,{N:32768,r:8,p:3,maxmem:48*1024*1024});const wanted=Buffer.from(c.hash,'hex');return wanted.length===hash.length&&timingSafeEqual(hash,wanted)&&email.toLowerCase().trim()===c.email.toLowerCase();}
 export async function allowLogin(r:Request){const db=(env as any).DB;if(!db)throw new Error('Proteção de login indisponível.');const window=Math.floor(Date.now()/900000);const ip=r.headers.get('cf-connecting-ip')||'unknown';const key=createHash('sha256').update(ip).digest('hex')+':'+window;const row=await db.prepare('INSERT INTO login_limits (key, attempts, expires) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET attempts = attempts + 1 RETURNING attempts').bind(key,(window+2)*900000).first();if(Math.random()<.02)await db.prepare('DELETE FROM login_limits WHERE expires < ?').bind(Date.now()).run();return row.attempts<=12;}

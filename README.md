@@ -28,3 +28,11 @@ O código foi transferido. Dados, imagens de produção, senhas e variáveis pri
 - ORIGINAL-README.md: instruções do ambiente original.
 
 A configuração de vínculo com o projeto ChatGPT Sites e os arquivos gerados de compilação foram omitidos. Não inserir credenciais no código nem no GitHub.
+
+## Publicação inicial na Vercel
+
+Os comandos `dev`, `build` e `start` agora usam Next.js. A configuração Vite e os workers antigos são excluídos da checagem TypeScript do Next.js, sem desativar a checagem da aplicação.
+
+Esta versão valida apenas a publicação da interface. `/api/tours` e `/api/image` retornam **503 (migração pendente)**: não existe binding R2 na Vercel. A lógica original permanece nos arquivos para orientar a migração; os testes existentes exercitam essa lógica com mocks, não um backend Vercel completo. Não promover este Preview como aplicação operacional antes de concluir as pendências acima.
+
+`STUDIO_AUTH` é lido de uma variável privada do servidor. O login continua indisponível sem um serviço persistente de limitação de tentativas (antigo D1). Cabeçalhos de identidade ChatGPT enviados pelo cliente não são confiáveis na Vercel e não autenticam usuários.
